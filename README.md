@@ -15,7 +15,13 @@ Detailed documentation can be found at https://sigprofilersuite.github.io/SigPro
 
 Install the current stable PyPi version of SigProfilerAssignment:
 ```
-$ pip install SigProfilerAssignment
+$ cd SigProfilerAssignment
+$ python -m pip install -e .
+```
+
+Validate the new parameter:
+```
+$ SigProfilerAssignment cosmic_fit --help | grep vcf_context_tag
 ```
 
 If mutation calling files (MAF, VCF, or simple text files) are used as input, please install your desired reference genome as follows (available reference genomes are: GRCh37, GRCh38, mm9, mm10, mm39, rn6, and rn7):
