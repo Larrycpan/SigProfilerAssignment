@@ -77,4 +77,4 @@ Díaz-Gay M, Vangara R, Barnes M, *et al.*, Alexandrov LB. Assigning mutational 
 
 ## Contact
 
-For questions, support requests, or bug reports, please contact the SigProfilerSuite team via GitHub [issues](https://github.com/SigProfilerSuite/SigProfilerAssignment/issues) or by email at [contact@sigprofilersuite.org](mailto:contact@sigprofilersuite.org).
+For questions, support requests, or bug reports in this branch, please email at [kxiongac@connect.ust.hk](mailto:ckxiongac@connect.ust.hk).
