@@ -67,7 +67,7 @@ You can also run SigProfilerAssignment `cosmic_fit` function from command line:
 $ SigProfilerAssignment cosmic_fit samples output --input_type "matrix" --context_type "96"
 
 $ SigProfilerAssignment cosmic_fit samples output \
-    --exclude_signature_subgroups MMR_deficiency_signatures,SBS42
+    --exclude_signature_subgroups MMR_deficiency_signatures,SBS1
 
 ```
 
