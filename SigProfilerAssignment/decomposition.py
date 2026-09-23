@@ -9,8 +9,10 @@ Created on Sun May 19 12:21:06 2019
 from cmath import cos
 import datetime
 import platform
+import re
 
 from SigProfilerAssignment import decompose_subroutines as sub
+from SigProfilerAssignment.context_vcf import read_context_annotated_vcfs
 from SigProfilerAssignment.DecompositionPlots import PlotDecomposition as plot_decomp
 import SigProfilerAssignment
 
@@ -28,6 +30,144 @@ from pypdf import PdfWriter, PdfReader
 from pdf2image import convert_from_path
 import time
 from pathlib import Path
+
+
+DEFAULT_SIGNATURE_SUBGROUPS = {
+    "MMR_deficiency_signatures": {
+        "SBS": ["6", "14", "15", "20", "21", "26", "44"],
+        "DBS": ["7", "10"],
+        "ID": ["7"],
+    },
+    "POL_deficiency_signatures": {
+        "SBS": ["10a", "10b", "10c", "10d", "28"],
+        "DBS": ["3"],
+        "ID": [],
+    },
+    "HR_deficiency_signatures": {"SBS": ["3"], "DBS": ["13"], "ID": ["6"]},
+    "BER_deficiency_signatures": {"SBS": ["30", "36"], "DBS": [], "ID": []},
+    "Chemotherapy_signatures": {
+        "SBS": ["11", "25", "31", "35", "86", "87", "90", "99"],
+        "DBS": ["5"],
+        "ID": [],
+    },
+    "Immunosuppressants_signatures": {"SBS": ["32"], "DBS": [], "ID": []},
+    "Treatment_signatures": {
+        "SBS": ["11", "25", "31", "32", "35", "86", "87", "90", "99"],
+        "DBS": ["5"],
+        "ID": [],
+    },
+    "APOBEC_signatures": {"SBS": ["2", "13"], "DBS": [], "ID": []},
+    "Tobacco_signatures": {
+        "SBS": ["4", "29", "92", "100", "109"],
+        "DBS": ["2"],
+        "ID": ["3"],
+    },
+    "UV_signatures": {
+        "SBS": ["7a", "7b", "7c", "7d", "38"],
+        "DBS": ["1"],
+        "ID": ["13"],
+    },
+    "AA_signatures": {
+        "SBS": ["22", "22a", "22b"],
+        "DBS": ["20"],
+        "ID": ["23"],
+    },
+    "Colibactin_signatures": {"SBS": ["88"], "DBS": [], "ID": ["18"]},
+    "Artifact_signatures": {
+        "SBS": [
+            "27",
+            "43",
+            "45",
+            "46",
+            "47",
+            "48",
+            "49",
+            "50",
+            "51",
+            "52",
+            "53",
+            "54",
+            "55",
+            "56",
+            "57",
+            "58",
+            "59",
+            "60",
+            "95",
+        ],
+        "DBS": ["14"],
+        "ID": [],
+    },
+    "Lymphoid_signatures": {"SBS": ["9", "84", "85"], "DBS": [], "ID": []},
+}
+
+DIRECT_SIGNATURE_PATTERN = re.compile(
+    r"^(SBS|DBS|ID)([0-9]+)([A-Za-z]*)$", re.IGNORECASE
+)
+
+
+def _ordered_unique(values):
+    return list(dict.fromkeys(values))
+
+
+def resolve_signature_exclusions(exclusions, mutation_prefix):
+    """Expand subgroup names and normalize explicit COSMIC signature IDs."""
+
+    if exclusions is None:
+        return [], []
+    if not isinstance(exclusions, (list, tuple)):
+        raise TypeError(
+            "exclude_signature_subgroups must be a list or tuple containing "
+            "subgroup names and/or explicit signature IDs such as 'SBS42'."
+        )
+    if mutation_prefix not in ("SBS", "DBS", "ID"):
+        raise ValueError(
+            "exclude_signature_subgroups is supported only for SBS, DBS, and ID "
+            "analyses."
+        )
+
+    resolved = []
+    explicit = []
+    for raw_item in exclusions:
+        if not isinstance(raw_item, str):
+            raise TypeError(
+                "Each exclude_signature_subgroups item must be a string; got {}.".format(
+                    type(raw_item).__name__
+                )
+            )
+        item = raw_item.strip()
+        if not item:
+            raise ValueError("exclude_signature_subgroups cannot contain empty values.")
+
+        if item in DEFAULT_SIGNATURE_SUBGROUPS:
+            resolved.extend(
+                mutation_prefix + signature_number
+                for signature_number in DEFAULT_SIGNATURE_SUBGROUPS[item][mutation_prefix]
+            )
+            continue
+
+        match = DIRECT_SIGNATURE_PATTERN.fullmatch(item)
+        if match is None:
+            raise ValueError(
+                "Unknown signature subgroup or invalid signature ID {!r}. Use a "
+                "documented subgroup name or an explicit ID such as 'SBS42'.".format(
+                    item
+                )
+            )
+
+        prefix, number, suffix = match.groups()
+        prefix = prefix.upper()
+        if prefix != mutation_prefix:
+            raise ValueError(
+                "Explicit exclusion {!r} is incompatible with the {} context.".format(
+                    item, mutation_prefix
+                )
+            )
+        normalized = prefix + number + suffix.lower()
+        resolved.append(normalized)
+        explicit.append(normalized)
+
+    return _ordered_unique(resolved), _ordered_unique(explicit)
 
 
 def get_storage_dir(volume=None):
@@ -190,11 +330,22 @@ def record_parameters(sysdata, execution_parameters, start_time):
         "\treference_genome: {}\n".format(execution_parameters["reference_genome"])
     )
     sysdata.write("\tcontext_types: {}\n".format(execution_parameters["context_type"]))
+    if execution_parameters.get("vcf_context_tag") is not None:
+        sysdata.write(
+            "\tvcf_context_tag: {}\n".format(
+                execution_parameters["vcf_context_tag"]
+            )
+        )
     sysdata.write("\texome: {}\n".format(execution_parameters["exome"]))
 
     sysdata.write("COSMIC MATCH\n")
     sysdata.write(
         "\tcosmic_version: {}\n".format(execution_parameters["cosmic_version"])
+    )
+    sysdata.write(
+        "\texclude_signature_subgroups: {}\n".format(
+            execution_parameters["exclude_signature_subgroups"]
+        )
     )
     sysdata.write(
         "\tnnls_add_penalty: {}\n".format(execution_parameters["nnls_add_penalty"])
@@ -270,6 +421,7 @@ def spa_analyze(
     volume=None,
     cpu=-1,
     add_background_signatures=True,
+    vcf_context_tag=None,
 ):
     """
     Decomposes the De Novo Signatures into COSMIC Signatures and assigns COSMIC signatures into samples.
@@ -284,6 +436,8 @@ def spa_analyze(
         verbose = Boolean. Prints statements. Default value is False.
         exome = Boolean. Defines if the exome renormalized signatures will be used. The default value is False.
         sample_reconstruction_plots (str): Select output format for sample reconstruction plots. Valid options are {'pdf', 'png', 'both', 'none'}. Default is 'none'.
+        exclude_signature_subgroups (list): Subgroup names and/or explicit signature IDs to exclude. For example, ["MMR_deficiency_signatures", "SBS42"].
+        vcf_context_tag (str): Optional VCF INFO tag containing a trinucleotide or SBS96 context. When set, VCFs are processed without querying a reference genome, enabling arbitrary-species input. Use "AUTO" to detect common tags.
 
     Values:
         The files below will be generated in the output folder.
@@ -327,7 +481,18 @@ def spa_analyze(
             "If denovo_refit or decompose_fit is True, signatures cannot be empty"
         )
 
-    if input_type.lower() == "vcf":
+    mutation_records = None
+    if input_type.lower() == "vcf" and vcf_context_tag is not None:
+        if str(context_type).upper() not in ("96", "SBS96"):
+            raise ValueError(
+                "Context-annotated VCF input currently supports SBS96 only; "
+                "set context_type='96'."
+            )
+        genomes, mutation_records = read_context_annotated_vcfs(
+            samples, context_tag=vcf_context_tag
+        )
+
+    elif input_type.lower() == "vcf":
         project_name = "Input_vcffiles"
         vcf_context = context_type
         data = datadump.SigProfilerMatrixGeneratorFunc(
@@ -373,108 +538,10 @@ def spa_analyze(
     if m == "83":
         m_for_subgroups = "ID"
 
-    default_subgroups_dict = {
-        "MMR_deficiency_signatures": False,
-        "POL_deficiency_signatures": False,
-        "HR_deficiency_signatures": False,
-        "BER_deficiency_signatures": False,
-        "Chemotherapy_signatures": False,
-        "Immunosuppressants_signatures": False,
-        "Treatment_signatures": False,
-        "APOBEC_signatures": False,
-        "Tobacco_signatures": False,
-        "UV_signatures": False,
-        "AA_signatures": False,
-        "Colibactin_signatures": False,
-        "Artifact_signatures": False,
-        "Lymphoid_signatures": False,
-    }
-
-    default_subgroups_siglists = {
-        "MMR_deficiency_signatures": {
-            "SBS": ["6", "14", "15", "20", "21", "26", "44"],
-            "DBS": ["7", "10"],
-            "ID": ["7"],
-        },
-        "POL_deficiency_signatures": {
-            "SBS": ["10a", "10b", "10c", "10d", "28"],
-            "DBS": ["3"],
-            "ID": [],
-        },
-        "HR_deficiency_signatures": {"SBS": ["3"], "DBS": ["13"], "ID": ["6"]},
-        "BER_deficiency_signatures": {"SBS": ["30", "36"], "DBS": [], "ID": []},
-        "Chemotherapy_signatures": {
-            "SBS": ["11", "25", "31", "35", "86", "87", "90", "99"],
-            "DBS": ["5"],
-            "ID": [],
-        },
-        "Immunosuppressants_signatures": {"SBS": ["32"], "DBS": [], "ID": []},
-        "Treatment_signatures": {
-            "SBS": ["11", "25", "31", "32", "35", "86", "87", "90", "99"],
-            "DBS": ["5"],
-            "ID": [],
-        },
-        "APOBEC_signatures": {"SBS": ["2", "13"], "DBS": [], "ID": []},
-        "Tobacco_signatures": {"SBS": ["4", "29", "92", "100", "109"], "DBS": ["2"], "ID": ["3"]},
-        "UV_signatures": {
-            "SBS": ["7a", "7b", "7c", "7d", "38"],
-            "DBS": ["1"],
-            "ID": ["13"],
-        },
-        "AA_signatures": {"SBS": ["22", "22a", "22b"], "DBS": ["20"], "ID": ["23"]},
-        "Colibactin_signatures": {"SBS": ["88"], "DBS": [], "ID": ["18"]},
-        "Artifact_signatures": {
-            "SBS": [
-                "27",
-                "43",
-                "45",
-                "46",
-                "47",
-                "48",
-                "49",
-                "50",
-                "51",
-                "52",
-                "53",
-                "54",
-                "55",
-                "56",
-                "57",
-                "58",
-                "59",
-                "60",
-                "95",
-            ],
-            "DBS": ["14"],
-            "ID": [],
-        },
-        "Lymphoid_signatures": {"SBS": ["9", "84", "85"], "DBS": [], "ID": []},
-    }
-
-    signature_subgroups_dict = default_subgroups_dict.copy()
-    if exclude_signature_subgroups == None:
-        pass
-    else:
-        if type(exclude_signature_subgroups) is not list:
-            sys.exit(
-                "exclude_signature_subgroups input should be a list of appropriate flags, please refer to documentation."
-            )
-        else:
-            for key in default_subgroups_dict:
-                if key in exclude_signature_subgroups:
-                    signature_subgroups_dict[key] = True
-
-    sig_exclusion_list = []
-    if exclude_signature_subgroups == None:
-        sig_exclusion_list = []
-    else:
-        for key in signature_subgroups_dict:
-            if signature_subgroups_dict[key]:
-                sig_exclusion_list.append(
-                    default_subgroups_siglists[key][m_for_subgroups]
-                )
-
-    sig_exclusion_list = [item for sublist in sig_exclusion_list for item in sublist]
+    sig_exclusion_list, explicit_sig_exclusion_list = resolve_signature_exclusions(
+        exclude_signature_subgroups,
+        m_for_subgroups,
+    )
 
     try:
         if not os.path.exists(output):
@@ -496,6 +563,7 @@ def spa_analyze(
         "samples": samples,
         "reference_genome": genome_build,
         "cosmic_version": cosmic_version,
+        "exclude_signature_subgroups": exclude_signature_subgroups,
         "context_type": context_type,
         "exome": exome,
         "nnls_add_penalty": nnls_add_penalty,
@@ -504,6 +572,7 @@ def spa_analyze(
         "de_novo_fit_penalty": de_novo_fit_penalty,
         "collapse_to_SBS96": collapse_to_SBS96,
         "export_probabilities": export_probabilities,
+        "vcf_context_tag": vcf_context_tag,
         "make_plots": make_plots,
         "volume": volume,
         "cpu": cpu,
@@ -709,6 +778,7 @@ def spa_analyze(
                 input_type=input_type,
                 denovo_refit_option=denovo_refit_option,
                 exome=exome,
+                mutation_records=mutation_records,
                 volume=volume,
                 cpu=cpu,
             )
@@ -749,6 +819,7 @@ def spa_analyze(
                 input_type=input_type,
                 denovo_refit_option=denovo_refit_option,
                 exome=exome,
+                mutation_records=mutation_records,
                 volume=volume,
                 cpu=cpu,
             )
@@ -904,6 +975,7 @@ def spa_analyze(
             originalProcessAvg=originalProcessAvg,
             new_signature_thresh_hold=new_signature_thresh_hold,
             sig_exclusion_list=sig_exclusion_list,
+            explicit_sig_exclusion_list=explicit_sig_exclusion_list,
             exome=exome,
             m_for_subgroups=m_for_subgroups,
             volume=volume,
@@ -959,6 +1031,7 @@ def spa_analyze(
             input_type=input_type,
             denovo_refit_option=denovo_refit_option,
             exome=exome,
+            mutation_records=mutation_records,
             volume=volume,
             cpu=cpu,
         )
@@ -1048,7 +1121,12 @@ def spa_analyze(
             index = genomes.index
 
         # processAvg is sigdatabase: remove sigs corresponding to exclusion rules.
-        sig_exclusion_list = [m_for_subgroups + items for items in sig_exclusion_list]
+        sig_exclusion_list = sub.qualify_signature_exclusions(
+            sig_exclusion_list, m_for_subgroups
+        )
+        sub.validate_explicit_signature_exclusions(
+            explicit_sig_exclusion_list, processAvg.columns
+        )
         if sig_exclusion_list:
             print(
                 "The following signatures are excluded: "
@@ -1056,6 +1134,10 @@ def spa_analyze(
             )
         # #
         processAvg.drop(sig_exclusion_list, axis=1, inplace=True, errors="ignore")
+        if processAvg.shape[1] == 0:
+            raise ValueError(
+                "All signatures in the selected signature database were excluded."
+            )
 
         # for sample reconstruction plots; built after collapsing/exclusion so it
         # matches the signatures actually used, whether from COSMIC or a custom
@@ -1130,6 +1212,7 @@ def spa_analyze(
             input_type=input_type,
             denovo_refit_option=denovo_refit_option,
             exome=exome,
+            mutation_records=mutation_records,
             volume=volume,
             cpu=cpu,
         )

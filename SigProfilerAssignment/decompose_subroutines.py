@@ -31,6 +31,38 @@ from joblib import Parallel, delayed
 from multiprocessing import cpu_count
 
 
+def qualify_signature_exclusions(exclusions, mutation_prefix):
+    """Return fully qualified signature IDs while supporting legacy bare IDs."""
+
+    qualified = []
+    for exclusion in exclusions or []:
+        value = str(exclusion).strip()
+        upper_value = value.upper()
+        for prefix in ("SBS", "DBS", "ID"):
+            if upper_value.startswith(prefix):
+                value = prefix + value[len(prefix) :]
+                break
+        else:
+            value = mutation_prefix + value
+        if value not in qualified:
+            qualified.append(value)
+    return qualified
+
+
+def validate_explicit_signature_exclusions(exclusions, available_signatures):
+    """Require explicitly requested signature IDs to exist in the active database."""
+
+    available = set(available_signatures)
+    missing = [item for item in exclusions or [] if item not in available]
+    if missing:
+        raise ValueError(
+            "Explicitly excluded signature(s) not found in the selected signature "
+            "database: {}. Available signatures include: {}".format(
+                ", ".join(missing), ", ".join(map(str, available_signatures))
+            )
+        )
+
+
 def getProcessAvg(
     samples,
     genome_build="GRCh37",
@@ -316,6 +348,7 @@ def signature_decomposition(
     volume=None,
     add_background_signatures=True,
     collapse_to_SBS96=True,
+    explicit_sig_exclusion_list=None,
 ):
     originalProcessAvg = originalProcessAvg.reset_index()
     if not os.path.exists(directory + "/Solution_Stats"):
@@ -371,12 +404,21 @@ def signature_decomposition(
                 "Wrong format of signature database for decompose_fit, Please pass a text file of signatures in the format of COSMIC sig database"
             )
 
-    sig_exclusion_list = [m_for_subgroups + items for items in sig_exclusion_list]
+    sig_exclusion_list = qualify_signature_exclusions(
+        sig_exclusion_list, m_for_subgroups
+    )
+    validate_explicit_signature_exclusions(
+        explicit_sig_exclusion_list, sigDatabase.columns
+    )
     lognote.write(
         "The following signatures are excluded: "
         + " ".join(str(item) for item in sig_exclusion_list)
     )
     sigDatabase.drop(sig_exclusion_list, axis=1, inplace=True, errors="ignore")
+    if sigDatabase.shape[1] == 0:
+        raise ValueError(
+            "All signatures in the selected signature database were excluded."
+        )
     signames = sigDatabase.columns
 
     # if type(signature_database)==pd.core.frame.DataFrame:
@@ -1032,6 +1074,7 @@ def make_final_solution(
     exome=False,
     volume=None,
     cpu=-1,
+    mutation_records=None,
 ):
     if processAvg.shape[0] == allgenomes.shape[0] and processAvg.shape[0] != 96:
         collapse_to_SBS96 = False
@@ -1540,12 +1583,18 @@ def make_final_solution(
 
     if export_probabilities_per_mutation:
         if export_probabilities:
-            if input_type == "vcf":
+            if input_type.lower() == "vcf":
                 if m == "96" or m == "78" or m == "83":
                     (
                         probability_per_mutation,
                         samples_prob_per_mut,
-                    ) = probabilities_per_mutation(probability, samples, m, exome)
+                    ) = probabilities_per_mutation(
+                        probability,
+                        samples,
+                        m,
+                        exome,
+                        mutation_records=mutation_records,
+                    )
 
                     if denovo_refit_option:
                         if refit_denovo_signatures:
@@ -1720,9 +1769,43 @@ def probabilities(W, H, index, allsigids, allcolnames):
 
 
 ################################################### Generation of probabilities for each processes given to A mutation ############################################
-def probabilities_per_mutation(probability_matrix, samples_path, m, exome=False):
+def probabilities_per_mutation(
+    probability_matrix, samples_path, m, exome=False, mutation_records=None
+):
 
     probability_matrix = probability_matrix.reset_index()
+
+    if mutation_records is not None:
+        required_columns = {"Sample Names", "Chr", "Pos", "MutationType"}
+        missing_columns = required_columns.difference(mutation_records.columns)
+        if missing_columns:
+            raise ValueError(
+                "mutation_records is missing required columns: {}".format(
+                    ", ".join(sorted(missing_columns))
+                )
+            )
+        all_mutations = mutation_records.copy()
+    else:
+        all_mutations = _read_matrix_generator_mutations(samples_path, m, exome)
+
+    all_samples_mutations = [y for x, y in all_mutations.groupby("Sample Names")]
+
+    prob_per_mut = []
+    sample_names = []
+    for sample_mutations in all_samples_mutations:
+        new = sample_mutations.merge(
+            probability_matrix,
+            on=["Sample Names", "MutationType"],
+            how="left",
+            validate="many_to_one",
+        )
+        prob_per_mut.append(new)
+        sample_names.append(new["Sample Names"].iloc[0])
+
+    return [prob_per_mut, sample_names]
+
+
+def _read_matrix_generator_mutations(samples_path, m, exome=False):
 
     if m == "96":
         seqinfo_path = samples_path + "/output/vcf_files/SNV/"
@@ -1769,18 +1852,7 @@ def probabilities_per_mutation(probability_matrix, samples_path, m, exome=False)
         all_mutations["Chr"] = [str(x) for x in (all_mutations["Chr"]).to_list()]
         all_mutations = pd.merge(all_mutations, exome_df)
 
-    all_samples_mutations = [y for x, y in all_mutations.groupby("Sample Names")]
-
-    prob_per_mut = []
-    sample_names = []
-    for sample_mutations in all_samples_mutations:
-        new = sample_mutations.merge(probability_matrix)
-        prob_per_mut.append(new)
-        sample_names.append(new["Sample Names"][0])
-
-    result = [prob_per_mut, sample_names]
-
-    return result
+    return all_mutations
 
 
 def custom_signatures_plot(signatures, output):

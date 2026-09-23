@@ -26,6 +26,7 @@ def decompose_fit(
     volume=None,
     cpu=-1,
     add_background_signatures=True,
+    vcf_context_tag=None,
 ):
     decomp.spa_analyze(
         samples=samples,
@@ -52,6 +53,7 @@ def decompose_fit(
         context_type=context_type,
         export_probabilities=export_probabilities,
         export_probabilities_per_mutation=export_probabilities_per_mutation,
+        vcf_context_tag=vcf_context_tag,
         volume=volume,
         cpu=cpu,
         add_background_signatures=add_background_signatures,
@@ -82,6 +84,7 @@ def denovo_fit(
     volume=None,
     cpu=-1,
     add_background_signatures=True,
+    vcf_context_tag=None,
 ):
     decomp.spa_analyze(
         samples=samples,
@@ -107,6 +110,7 @@ def denovo_fit(
         context_type=context_type,
         export_probabilities=export_probabilities,
         export_probabilities_per_mutation=export_probabilities_per_mutation,
+        vcf_context_tag=vcf_context_tag,
         volume=volume,
         cpu=cpu,
         add_background_signatures=add_background_signatures,
@@ -138,6 +142,7 @@ def cosmic_fit(
     volume=None,
     cpu=-1,
     add_background_signatures=True,
+    vcf_context_tag=None,
 ):
     decomp.spa_analyze(
         samples=samples,
@@ -163,6 +168,7 @@ def cosmic_fit(
         context_type=context_type,
         export_probabilities=export_probabilities,
         export_probabilities_per_mutation=export_probabilities_per_mutation,
+        vcf_context_tag=vcf_context_tag,
         sample_reconstruction_plots=sample_reconstruction_plots,
         volume=volume,
         cpu=cpu,

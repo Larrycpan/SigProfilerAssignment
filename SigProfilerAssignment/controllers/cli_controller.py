@@ -103,7 +103,10 @@ def parse_arguments_common(args: List[str], description: str) -> argparse.Namesp
         "--exclude_signature_subgroups",
         type=str2list,
         default=None,
-        help="Remove specific signature subgroups.",
+        help=(
+            "Comma-separated signature subgroups and/or explicit signature IDs to "
+            "exclude (for example: MMR_deficiency_signatures,SBS42)."
+        ),
     )
     parser.add_argument(
         "--exome",
@@ -138,6 +141,15 @@ def parse_arguments_common(args: List[str], description: str) -> argparse.Namesp
         const=True,
         default=False,
         help="Export probabilities matrices per mutation (default: False).",
+    )
+    parser.add_argument(
+        "--vcf_context_tag",
+        default=None,
+        help=(
+            "VCF INFO tag containing a trinucleotide or SBS96 context. "
+            "When provided with --input_type vcf, bypasses reference-genome "
+            "lookup and supports arbitrary species. Use AUTO to detect common tags."
+        ),
     )
     parser.add_argument(
         "--volume",
@@ -200,6 +212,7 @@ class CliController:
             context_type=parsed_args.context_type,
             export_probabilities=parsed_args.export_probabilities,
             export_probabilities_per_mutation=parsed_args.export_probabilities_per_mutation,
+            vcf_context_tag=parsed_args.vcf_context_tag,
             add_background_signatures=parsed_args.add_background_signatures,
         )
 
@@ -231,6 +244,7 @@ class CliController:
             context_type=parsed_args.context_type,
             export_probabilities=parsed_args.export_probabilities,
             export_probabilities_per_mutation=parsed_args.export_probabilities_per_mutation,
+            vcf_context_tag=parsed_args.vcf_context_tag,
             add_background_signatures=parsed_args.add_background_signatures,
         )
 
@@ -262,6 +276,7 @@ class CliController:
             context_type=parsed_args.context_type,
             export_probabilities=parsed_args.export_probabilities,
             export_probabilities_per_mutation=parsed_args.export_probabilities_per_mutation,
+            vcf_context_tag=parsed_args.vcf_context_tag,
             sample_reconstruction_plots=parsed_args.sample_reconstruction_plots,
             add_background_signatures=parsed_args.add_background_signatures,
         )

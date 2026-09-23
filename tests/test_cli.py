@@ -17,6 +17,7 @@ def test_default_values():
     assert args.verbose == False
     assert args.export_probabilities == True
     assert args.export_probabilities_per_mutation == False
+    assert args.vcf_context_tag is None
     assert args.exome == False
 
 
@@ -41,12 +42,14 @@ def test_argument_parsing():
             "False",
             "--export_probabilities_per_mutation",
             "True",
+            "--vcf_context_tag",
+            "TRINUCLEOTIDE",
             "--exome",
             "True",
             "--sample_reconstruction_plots",
             "png",
             "--exclude_signature_subgroups",
-            "MMR_deficiency_signatures,POL_deficiency_signatures,HR_deficiency_signatures,BER_deficiency_signatures,Chemotherapy_signatures,Immunosuppressants_signatures,Treatment_signatures,APOBEC_signatures,Tobacco_signatures,UV_signatures,AA_signatures,Colibactin_signatures,Artifact_signatures,Lymphoid_signatures"
+            "MMR_deficiency_signatures,SBS42",
         ],
         "Test argument parsing",
     )
@@ -60,9 +63,13 @@ def test_argument_parsing():
     assert args.verbose == True
     assert args.export_probabilities == False
     assert args.export_probabilities_per_mutation == True
+    assert args.vcf_context_tag == "TRINUCLEOTIDE"
     assert args.exome == True
     assert args.sample_reconstruction_plots == "png"
-    assert args.exclude_signature_subgroups == ['MMR_deficiency_signatures', 'POL_deficiency_signatures', 'HR_deficiency_signatures' , 'BER_deficiency_signatures', 'Chemotherapy_signatures', 'Immunosuppressants_signatures', 'Treatment_signatures', 'APOBEC_signatures', 'Tobacco_signatures', 'UV_signatures', 'AA_signatures', 'Colibactin_signatures', 'Artifact_signatures', 'Lymphoid_signatures']
+    assert args.exclude_signature_subgroups == [
+        "MMR_deficiency_signatures",
+        "SBS42",
+    ]
 
 
 def test_boolean_conversion():

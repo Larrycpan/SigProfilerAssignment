@@ -35,10 +35,39 @@ from SigProfilerAssignment import Analyzer as Analyze
 Analyze.cosmic_fit(samples, output, input_type="matrix", context_type="96")
 ```
 
+Predefined signature subgroups and individual signatures can be excluded together:
+
+```python
+Analyze.cosmic_fit(
+    samples,
+    output,
+    input_type="matrix",
+    context_type="96",
+    exclude_signature_subgroups=["MMR_deficiency_signatures", "SBS1"],
+)
+```
+
+For an arbitrary-species VCF that already contains trinucleotide context in an
+INFO field, reference-genome lookup can be bypassed:
+
+```python
+Analyze.cosmic_fit(
+    samples="path/to/vcfs",
+    output="path/to/output",
+    input_type="vcf",
+    context_type="96",
+    vcf_context_tag="TRINUCLEOTIDE",
+    export_probabilities_per_mutation=True,
+)
+```
+
 You can also run SigProfilerAssignment `cosmic_fit` function from command line: 
 
 ``` bash
 $ SigProfilerAssignment cosmic_fit samples output --input_type "matrix" --context_type "96"
+
+$ SigProfilerAssignment cosmic_fit samples output \
+    --exclude_signature_subgroups MMR_deficiency_signatures,SBS42
 
 ```
 
@@ -49,4 +78,3 @@ Díaz-Gay M, Vangara R, Barnes M, *et al.*, Alexandrov LB. Assigning mutational 
 ## Contact
 
 For questions, support requests, or bug reports, please contact the SigProfilerSuite team via GitHub [issues](https://github.com/SigProfilerSuite/SigProfilerAssignment/issues) or by email at [contact@sigprofilersuite.org](mailto:contact@sigprofilersuite.org).
-

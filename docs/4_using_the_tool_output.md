@@ -52,6 +52,8 @@ The `Decomposed_Mutation_Probabilities.txt` file includes the probabilities of e
 
 ![Decomposed_Mutation_Probabilities](assets/images/Matrix_Activities/Decomposed_Mutation_Probabilities.png)
 
+When `export_probabilities_per_mutation=True`, one table per sample is also written under `Activities/Decomposed_Mutation_Probabilities/`. For context-annotated VCF input, each row retains chromosome, position, VCF ID, REF, ALT, normalized SBS96 mutation type, and the probability assigned to every fitted signature.
+
 ## Signatures Directory ##
 ### Assignment_Solution_Signatures.txt ###
 The `Assignment_Solution_Signatures.txt` file contains the distribution of mutation types in the input mutational signatures. The first column lists all of the mutation types. There are 96 possible mutations that are considered for the SBS-96 context. The following columns are the signatures. Only the first few rows and columns are shown in the image below; however, the sum of each column is 1, and each value in a column indicates the proportion of a mutational context in the signature.

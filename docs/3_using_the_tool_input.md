@@ -58,34 +58,63 @@ The full list of parameters is included in the following table:
 | exome | Boolean | Defines if the exome renormalized COSMIC signatures will be used. The default value is False |
 | genome_build | String | The reference genome build, used for select the appropriate version of the COSMIC reference signatures, as well as processing the mutation calling file/s. Supported genomes include "GRCh37", "GRCh38", "mm9", "mm10", "mm39", "rn6" and "rn7". The default value is "GRCh37". If the selected genome is not in the supported list, the default genome will be used |
 | signature_database | String | Path to the input set of known mutational signatures (only in case that COSMIC reference signatures are not used), a tab delimited file that contains the signature matrix where the rows are mutation types and columns are signature IDs |
-| exclude_signature_subgroups | List | Removes the signatures corresponding to specific subtypes to improve refitting (only available when using default COSMIC reference signatures). The usage is explained below. The default value is None, which corresponds to use all COSMIC signatures |
+| exclude_signature_subgroups | List | Removes predefined signature subgroups and/or explicit signature IDs to improve refitting. Entries may be mixed, for example `['MMR_deficiency_signatures', 'SBS42']`. The default value is None, which corresponds to using all signatures |
 | export_probabilities | Boolean | Defines if the probability matrix per mutational context for all samples is created. The default value is True |
 | export_probabilities_per_mutation | Boolean | Defines if the probability matrices per mutation for all samples are created. Only available when `input_type` is "vcf". The default value is False |
+| vcf_context_tag | String | Optional VCF INFO tag containing the reference trinucleotide or complete SBS96 context. When provided with `input_type="vcf"`, SigProfilerAssignment reads SBS96 contexts directly and does not query an installed reference genome. Use `"AUTO"` to detect `TRINUCLEOTIDE`, `TRINUC`, `TRI`, `CONTEXT`, or `SBS96`. The default value is None |
 | make_plots | Boolean | Toggle on and off for making and saving plots. The default value is True |
 | sample_reconstruction_plots | String | Select the output format for sample reconstruction plots. Valid inputs are 'pdf', 'png', 'both'and  None. The default value is None |
 | verbose | Boolean | Prints detailed statements. The default value is False |
 
-### Signature subgroups ###
-When using [COSMIC][3] reference signatures, some subgroups of signatures can be removed to improve the *refitting* analysis. To use this feature, the `exclude_signature_subgroups` parameter should be added, following the syntax below:
+### Context-annotated VCFs from arbitrary species ###
+
+SBS96 assignment can be run for any species without installing its reference genome when every SNV contains trinucleotide context in a VCF INFO field. Set `vcf_context_tag` to the INFO tag name (or to `"AUTO"`) and enable per-mutation probabilities:
 
 ``` python
-exclude_signature_subgroups = ['MMR_deficiency_signatures',
-                               'POL_deficiency_signatures',
-                               'HR_deficiency_signatures' ,
-                               'BER_deficiency_signatures',
-                               'Chemotherapy_signatures',
-                               'Immunosuppressants_signatures'
-                               'Treatment_signatures'
-                               'APOBEC_signatures',
-                               'Tobacco_signatures',
-                               'UV_signatures',
-                               'AA_signatures',
-                               'Colibactin_signatures',
-                               'Artifact_signatures',
-                               'Lymphoid_signatures']
+from SigProfilerAssignment import Analyzer as Analyze
+
+Analyze.cosmic_fit(
+    samples="path/to/vcf_or_vcf_directory",
+    output="path/to/output",
+    input_type="vcf",
+    context_type="96",
+    vcf_context_tag="TRINUCLEOTIDE",
+    export_probabilities=True,
+    export_probabilities_per_mutation=True,
+)
 ```
 
-The full list of signature subgroups is included in the following table:
+The equivalent command-line call is:
+
+``` bash
+SigProfilerAssignment cosmic_fit path/to/vcf_or_vcf_directory path/to/output \
+  --input_type vcf \
+  --context_type 96 \
+  --vcf_context_tag TRINUCLEOTIDE \
+  --export_probabilities True \
+  --export_probabilities_per_mutation True
+```
+
+Accepted INFO values are a reference trinucleotide (`ACA`), an SBS96 label (`A[C>A]A`), or paired reference/alternate trinucleotides (`ACA>AAA` or `ACA/AAA`). Both genomic-strand and pyrimidine-oriented values are accepted. Input may be one `.vcf`, `.vcf.gz`, or `.vcf.bgz` file, or a directory containing such files. For multisample VCFs, genotypes select which samples contain each ALT allele; for sites-only VCFs, the filename is used as the sample name.
+
+This direct-context mode supports single-base substitutions (SBS96) only. It bypasses reference sequence lookup, but signature selection is still independent: the default COSMIC database uses the selected supported `genome_build` (GRCh37 by default). For species-specific opportunity normalization, provide an SBS96 `signature_database` normalized for the target species.
+
+### Signature subgroups ###
+Predefined signature subgroups and individual signature IDs can be removed to improve the *refitting* analysis. They can be mixed in the same list. For example, the following excludes all MMR-deficiency SBS signatures plus SBS42:
+
+``` python
+exclude_signature_subgroups = ['MMR_deficiency_signatures', 'SBS42']
+```
+
+The equivalent command-line option is:
+
+``` bash
+--exclude_signature_subgroups MMR_deficiency_signatures,SBS42
+```
+
+Explicit IDs are case-insensitive on input (`sbs10A` is normalized to `SBS10a`), must match the mutation context (`SBS`, `DBS`, or `ID`), and must exist in the selected COSMIC or custom signature database. Duplicate exclusions are removed while preserving their first occurrence. Predefined subgroup members that are unavailable in an older COSMIC version are ignored.
+
+The available predefined signature subgroups are included in the following table:
 
 |Signature subgroup |           SBS signatures excluded | DBS signatures excluded | ID signatures excluded |
 | ----------- | ----------- | ----------- | ----------- |
@@ -93,13 +122,13 @@ The full list of signature subgroups is included in the following table:
 |POL_deficiency_signatures|     10a, 10b, 10c, 10d, 28|         3|      -|
 |HR_deficiency_signatures|      3|                              -|      6|
 |BER_deficiency_signatures|     30, 36|                         -|      -|
-|Chemotherapy_signatures|       11, 25, 31, 35, 86, 87, 90|     5|      -|
+|Chemotherapy_signatures|       11, 25, 31, 35, 86, 87, 90, 99| 5|      -|
 |Immunosuppressants_signatures| 32|                             -|      -|
-|Treatment_signatures|          11, 25, 31, 32, 35, 86, 87, 90| 5|      -|
+|Treatment_signatures|          11, 25, 31, 32, 35, 86, 87, 90, 99| 5|   -|
 |APOBEC_signatures|             2, 13|                          -|      -|
 |Tobacco_signatures |           4, 29, 92, 100, 109|            2|      3|
 |UV_signatures|                 7a, 7b, 7c, 7d, 38|             1|      13|
-|AA_signatures|                 22|                             -|      -|
+|AA_signatures|                 22, 22a, 22b|                   20|     23|
 |Colibactin_signatures|         88|                             -|      18|
 |Artifact_signatures|           27, 43, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 95|-|-|
 |Lymphoid_signatures|           9, 84, 85|                      -|      -|
